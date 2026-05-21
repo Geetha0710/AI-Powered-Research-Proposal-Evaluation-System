@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ResearchEval AI</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-wrap">
+      <header class="site-header">
+        <div class="header-badge">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2L4 7v10l8 5 8-5V7l-8-5Z" />
+          </svg>
+        </div>
+        <div class="header-text">
+          <h1 class="site-title">ResearchEval <span>AI</span></h1>
+          <p class="site-tagline">Proposal quality review for scientific funding decisions</p>
+        </div>
+      </header>
+
+      <div class="proposal-form">
+        <div class="section-label">Proposal evaluation</div>
+        <form id="proposal-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="title">Proposal Title <span class="required">*</span></label>
+              <input id="title" name="title" type="text" placeholder="Enter proposal title" required />
+            </div>
+            <div class="form-group">
+              <label for="domain">Research Domain <span class="required">*</span></label>
+              <input id="domain" name="domain" type="text" placeholder="e.g. Quantum computing" required />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="content">Proposal Content <span class="required">*</span></label>
+            <textarea id="content" name="content" placeholder="Paste the full proposal text here" rows="10" required></textarea>
+            <span class="char-counter" id="char-counter">0 / 20,000</span>
+          </div>
+
+          <div class="submit-wrap">
+            <button class="btn-analyze" type="submit">Analyze Proposal</button>
+            <button class="btn-clear" type="button" id="clear-btn">Clear</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="loader-wrap" id="loader">
+        <div class="loader-spinner"></div>
+        <div class="loader-text">Generating evaluation, please wait…</div>
+      </div>
+
+      <div class="error-banner" id="error-banner"></div>
+
+      <section id="results-section">
+        <div class="rec-banner" id="rec-banner">
+          <div class="rec-icon" id="rec-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2Zm1 15.93V18a1 1 0 0 1-2 0v-.07A8 8 0 1 1 20 12a1 1 0 0 1-2 0 6 6 0 1 0-5 5.93Z"></path></svg>
+          </div>
+          <div class="rec-text">
+            <div class="rec-verdict" id="recommendation-text">Recommendation</div>
+            <div class="rec-rationale" id="recommendation-rationale"></div>
+          </div>
+          <div class="rec-score-pill">
+            <span class="score-num" id="overall-score">0.0</span>
+            <span class="score-label">Overall Score</span>
+          </div>
+        </div>
+
+        <div class="cards-grid" id="summary-grid">
+          <div class="eval-card">
+            <h3>Proposal Summary</h3>
+            <p class="summary-text" id="summary-text"></p>
+          </div>
+        </div>
+
+        <div class="cards-grid">
+          <div class="eval-card">
+            <h3><span class="card-icon">✓</span> Strengths</h3>
+            <ul class="eval-list strengths" id="strengths-list"></ul>
+          </div>
+          <div class="eval-card">
+            <h3><span class="card-icon">✕</span> Weaknesses</h3>
+            <ul class="eval-list weaknesses" id="weaknesses-list"></ul>
+          </div>
+        </div>
+
+        <div class="cards-grid full">
+          <div class="eval-card">
+            <h3><span class="card-icon">→</span> Suggestions</h3>
+            <ul class="eval-list suggestions" id="suggestions-list"></ul>
+          </div>
+        </div>
+
+        <div class="cards-grid scores-card">
+          <div class="eval-card">
+            <h3>Evaluation Scores</h3>
+            <div class="score-bars" id="scores-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="site-footer">Built with Flask & Gemini AI • Keep proposal text concise and clear.</footer>
+    </div>
+
+    <script>
+      const form = document.getElementById('proposal-form');
+      const contentField = document.getElementById('content');
+      const charCounter = document.getElementById('char-counter');
+      const loader = document.getElementById('loader');
+      const errorBanner = document.getElementById('error-banner');
+      const resultsSection = document.getElementById('results-section');
+      const recBanner = document.getElementById('rec-banner');
+      const recommendationText = document.getElementById('recommendation-text');
+      const recommendationRationale = document.getElementById('recommendation-rationale');
+      const overallScore = document.getElementById('overall-score');
+      const summaryText = document.getElementById('summary-text');
+      const strengthsList = document.getElementById('strengths-list');
+      const weaknessesList = document.getElementById('weaknesses-list');
+      const suggestionsList = document.getElementById('suggestions-list');
+      const scoresGrid = document.getElementById('scores-grid');
+      const clearBtn = document.getElementById('clear-btn');
+
+      contentField.addEventListener('input', () => {
+        const length = contentField.value.length;
+        charCounter.textContent = `${length} / 20,000`;
+        charCounter.classList.toggle('over', length > 20000);
+      });
+
+      clearBtn.addEventListener('click', () => {
+        form.reset();
+        charCounter.textContent = '0 / 20,000';
+        hideResults();
+        hideError();
+      });
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        hideError();
+        hideResults();
+        loader.classList.add('active');
+
+        const payload = {
+          title: form.title.value.trim(),
+          domain: form.domain.value.trim(),
+          content: form.content.value.trim(),
+        };
+
+        try {
+          const response = await fetch('/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          const body = await response.json();
+          loader.classList.remove('active');
+
+          if (!response.ok) {
+            showError(body.error || 'An unexpected error occurred.');
+            return;
+          }
+
+          renderResults(body.evaluation);
+        } catch (error) {
+          loader.classList.remove('active');
+          showError(error.message || 'Network error. Please try again.');
+        }
+      });
+
+      function showError(message) {
+        errorBanner.textContent = message;
+        errorBanner.classList.add('active');
+      }
+
+      function hideError() {
+        errorBanner.classList.remove('active');
+      }
+
+      function hideResults() {
+        resultsSection.classList.remove('active');
+      }
+
+      function renderResults(data) {
+        const rec = data.recommendation || 'Needs Review';
+        recommendationText.textContent = rec;
+        recommendationRationale.textContent = data.recommendation_rationale || '';
+        overallScore.textContent = (data.overall_score || 0).toFixed(1);
+
+        recBanner.className = `rec-banner ${rec === 'Accept' ? 'accept' : rec === 'Reject' ? 'reject' : 'review'}`;
+
+        summaryText.textContent = data.summary || '';
+        strengthsList.innerHTML = renderList(data.strengths);
+        weaknessesList.innerHTML = renderList(data.weaknesses);
+        suggestionsList.innerHTML = renderList(data.suggestions);
+
+        scoresGrid.innerHTML = Object.entries(data.scores || {}).map(([key, value]) => {
+          const score = Number(value) || 0;
+          const level = score >= 8 ? 'high' : score >= 5 ? 'mid' : 'low';
+          return `
+            <div class="score-row">
+              <div class="score-meta">
+                <span class="score-name">${toTitle(key)}</span>
+                <span class="score-value">${score}</span>
+              </div>
+              <div class="score-track">
+                <div class="score-fill ${level}" style="width: ${Math.min(score, 10) * 10}%"></div>
+              </div>
+            </div>`;
+        }).join('');
+
+        resultsSection.classList.add('active');
+      }
+
+      function renderList(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+          return '<li>No items provided.</li>';
+        }
+        return items.map(item => `<li>${item}</li>`).join('');
+      }
+
+      function toTitle(key) {
+        return key.replace(/_/g, ' ').replace(/\b\w/g, (match) => match.toUpperCase());
+      }
+    </script>
+  </body>
+</html>
